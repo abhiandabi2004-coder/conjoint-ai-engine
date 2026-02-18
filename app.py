@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from data_validator import validate_format
 from data_processor import process_data
 from conjoint_engine import run_conjoint
 from ai_insights import generate_insights
@@ -9,87 +8,95 @@ st.set_page_config(page_title="Conjoint AI Engine", layout="wide")
 
 st.title("Universal Conjoint Analysis Engine")
 
-# -----------------------------
-# TEMPLATE DOWNLOAD
-# -----------------------------
-st.sidebar.header("Download Template")
+# =====================================================
+# STEP 1 — DEFINE STRUCTURE
+# =====================================================
 
-try:
-    with open("sample_data/Conjoint_Template.xlsx", "rb") as file:
-        st.sidebar.download_button(
-            label="Download Excel Template",
-            data=file,
-            file_name="Conjoint_Template.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-except:
-    st.sidebar.info("Template file not found in sample_data folder.")
+st.header("Step 1: Define Survey Structure")
 
-# -----------------------------
-# FILE UPLOAD
-# -----------------------------
-st.header("Step 1: Upload Survey File")
-
-uploaded_file = st.file_uploader(
-    "Upload Excel or CSV file",
-    type=["xlsx", "csv"]
+num_attributes = st.number_input(
+    "How many attributes do you want to analyze?",
+    min_value=1,
+    max_value=20,
+    step=1
 )
 
-if uploaded_file:
+attribute_names = []
 
-    # Read file
-    if uploaded_file.name.endswith(".xlsx"):
-        df = pd.read_excel(uploaded_file)
+for i in range(int(num_attributes)):
+    name = st.text_input(f"Enter name for Attribute {i+1}")
+    if name:
+        attribute_names.append(name.strip())
+
+response_column = st.text_input("Enter Response Column Name (e.g., Rating or Choice)")
+
+analysis_type = st.selectbox(
+    "Select Analysis Type",
+    ["Auto Detect", "Rating Based", "Choice Based"]
+)
+
+if st.button("Confirm Structure"):
+
+    if len(attribute_names) != num_attributes:
+        st.error("Please enter all attribute names.")
+    elif not response_column:
+        st.error("Please enter response column name.")
     else:
-        df = pd.read_csv(uploaded_file)
+        st.session_state["attributes"] = attribute_names
+        st.session_state["target"] = response_column.strip()
+        st.session_state["analysis_type"] = analysis_type
+        st.success("Structure confirmed. Now upload your dataset.")
 
-    # Clean column names immediately
-    df.columns = df.columns.str.strip()
+# =====================================================
+# STEP 2 — UPLOAD FILE
+# =====================================================
 
-    st.subheader("Preview Data")
-    st.dataframe(df.head())
+if "attributes" in st.session_state:
 
-    # -----------------------------
-    # RESPONSE COLUMN SELECTION
-    # -----------------------------
-    st.header("Step 2: Select Response Column")
+    st.header("Step 2: Upload Survey File")
 
-    if "Respondent_ID" not in df.columns:
-        st.error("Column 'Respondent_ID' is required.")
-        st.stop()
+    uploaded_file = st.file_uploader("Upload Excel or CSV file", type=["xlsx", "csv"])
 
-    response_column = st.selectbox(
-        "Select the Response Column (Rating or Choice)",
-        [col for col in df.columns if col != "Respondent_ID"]
-    )
+    if uploaded_file:
 
-    analysis_type = st.selectbox(
-        "Select Analysis Type",
-        ["Auto Detect", "Rating Based", "Choice Based"]
-    )
-
-    if st.button("Run Conjoint Analysis"):
-
-        # -----------------------------
-        # VALIDATION
-        # -----------------------------
-        expected_columns = df.columns.tolist()
-        valid, message = validate_format(df, expected_columns)
-
-        if not valid:
-            st.error(message)
+        if uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
         else:
-            st.success("Validation successful.")
+            df = pd.read_csv(uploaded_file)
 
-            # -----------------------------
-            # PROCESS DATA
-            # -----------------------------
+        # Clean column names
+        df.columns = df.columns.str.strip()
+
+        st.subheader("Preview Data")
+        st.dataframe(df.head())
+
+        expected_columns = (
+            ["Respondent_ID"]
+            + st.session_state["attributes"]
+            + [st.session_state["target"]]
+        )
+
+        # Clean expected columns
+        expected_columns = [col.strip() for col in expected_columns]
+
+        if list(df.columns) != expected_columns:
+            st.error(f"""
+            Column mismatch.
+            Expected:
+            {expected_columns}
+            
+            Found:
+            {list(df.columns)}
+            """)
+        else:
+            st.success("File format validated successfully.")
+
             try:
-                data = process_data(df, response_column)
+                data = process_data(df, st.session_state["target"])
 
                 results = run_conjoint(
                     data,
-                    analysis_type
+                    st.session_state["analysis_type"]
                 )
 
                 st.header("Results")
@@ -108,4 +115,4 @@ if uploaded_file:
                 st.write(insight)
 
             except Exception as e:
-                st.error(f"Error during processing: {e}")
+                st.error(f"Error during analysis: {e}")
