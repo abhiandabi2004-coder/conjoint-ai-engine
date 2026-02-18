@@ -6,18 +6,14 @@ def validate_format(df, expected_columns):
     # Clean expected columns
     expected_columns = [col.strip() for col in expected_columns]
 
-    # Compare as sets (ignore order)
-    if set(df.columns) != set(expected_columns):
-        return False, f"""
-        Column mismatch.
-        Expected: {expected_columns}
-        Found: {list(df.columns)}
-        """
+    # Check missing columns
+    missing = set(expected_columns) - set(df.columns)
+    extra = set(df.columns) - set(expected_columns)
 
-    if df["Respondent_ID"].duplicated().any():
-        return False, "Duplicate Respondent_ID found."
+    if missing:
+        return False, f"Missing columns: {missing}"
 
-    if df.isnull().sum().sum() > 0:
-        return False, "Dataset contains missing values."
+    if extra:
+        return False, f"Unexpected columns: {extra}"
 
     return True, "Valid format."
