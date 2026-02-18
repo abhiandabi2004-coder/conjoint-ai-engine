@@ -5,98 +5,107 @@ from data_processor import process_data
 from conjoint_engine import run_conjoint
 from ai_insights import generate_insights
 
-st.set_page_config(page_title="Universal Conjoint Engine", layout="wide")
+st.set_page_config(page_title="Conjoint AI Engine", layout="wide")
 
 st.title("Universal Conjoint Analysis Engine")
 
-# -------------------------------
-# STEP 1 — DEFINE STRUCTURE
-# -------------------------------
+# -----------------------------
+# TEMPLATE DOWNLOAD
+# -----------------------------
+st.sidebar.header("Download Template")
 
-st.header("Step 1: Define Survey Structure")
-
-num_attributes = st.number_input(
-    "Number of Attributes",
-    min_value=1,
-    max_value=20,
-    step=1
-)
-
-attribute_names = []
-
-for i in range(int(num_attributes)):
-    name = st.text_input(f"Name of Attribute {i+1}")
-    if name:
-        attribute_names.append(name)
-
-target_column = st.text_input("Response Column Name (Rating / Choice)")
-
-analysis_type = st.selectbox(
-    "Analysis Type",
-    ["Auto Detect", "Rating Based", "Choice Based"]
-)
-
-if st.button("Confirm Structure"):
-    if len(attribute_names) == num_attributes and target_column:
-        st.session_state["attributes"] = attribute_names
-        st.session_state["target"] = target_column
-        st.session_state["analysis_type"] = analysis_type
-        st.success("Structure saved. Upload file below.")
-    else:
-        st.error("Complete all fields before confirming.")
-
-
-# -------------------------------
-# STEP 2 — FILE UPLOAD
-# -------------------------------
-
-if "attributes" in st.session_state:
-
-    st.header("Step 2: Upload Survey File")
-
-    uploaded_file = st.file_uploader("Upload Excel or CSV", type=["xlsx", "csv"])
-
-    if uploaded_file:
-
-        if uploaded_file.name.endswith(".xlsx"):
-            df = pd.read_excel(uploaded_file)
-        else:
-            df = pd.read_csv(uploaded_file)
-
-        st.write("Preview Data", df.head())
-
-        expected_columns = (
-            ["Respondent_ID"]
-            + st.session_state["attributes"]
-            + [st.session_state["target"]]
+try:
+    with open("sample_data/Conjoint_Template.xlsx", "rb") as file:
+        st.sidebar.download_button(
+            label="Download Excel Template",
+            data=file,
+            file_name="Conjoint_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+except:
+    st.sidebar.info("Template file not found in sample_data folder.")
 
+# -----------------------------
+# FILE UPLOAD
+# -----------------------------
+st.header("Step 1: Upload Survey File")
+
+uploaded_file = st.file_uploader(
+    "Upload Excel or CSV file",
+    type=["xlsx", "csv"]
+)
+
+if uploaded_file:
+
+    # Read file
+    if uploaded_file.name.endswith(".xlsx"):
+        df = pd.read_excel(uploaded_file)
+    else:
+        df = pd.read_csv(uploaded_file)
+
+    # Clean column names immediately
+    df.columns = df.columns.str.strip()
+
+    st.subheader("Preview Data")
+    st.dataframe(df.head())
+
+    # -----------------------------
+    # RESPONSE COLUMN SELECTION
+    # -----------------------------
+    st.header("Step 2: Select Response Column")
+
+    if "Respondent_ID" not in df.columns:
+        st.error("Column 'Respondent_ID' is required.")
+        st.stop()
+
+    response_column = st.selectbox(
+        "Select the Response Column (Rating or Choice)",
+        [col for col in df.columns if col != "Respondent_ID"]
+    )
+
+    analysis_type = st.selectbox(
+        "Select Analysis Type",
+        ["Auto Detect", "Rating Based", "Choice Based"]
+    )
+
+    if st.button("Run Conjoint Analysis"):
+
+        # -----------------------------
+        # VALIDATION
+        # -----------------------------
+        expected_columns = df.columns.tolist()
         valid, message = validate_format(df, expected_columns)
 
         if not valid:
             st.error(message)
         else:
-            st.success("File format validated.")
+            st.success("Validation successful.")
 
-            data = process_data(
-                df,
-                st.session_state["target"]
-            )
+            # -----------------------------
+            # PROCESS DATA
+            # -----------------------------
+            try:
+                data = process_data(df, response_column)
 
-            results = run_conjoint(
-                data,
-                st.session_state["analysis_type"]
-            )
+                results = run_conjoint(
+                    data,
+                    analysis_type
+                )
 
-            st.subheader("Model Type")
-            st.write(results["model_type"])
+                st.header("Results")
 
-            st.subheader("Utilities")
-            st.write(results["utilities"])
+                st.subheader("Model Type")
+                st.write(results["model_type"])
 
-            st.subheader("Attribute Importance (%)")
-            st.write(results["importance"])
+                st.subheader("Utilities")
+                st.dataframe(results["utilities"])
 
-            insight = generate_insights(results)
-            st.subheader("AI Recommendation")
-            st.write(insight)
+                st.subheader("Attribute Importance (%)")
+                st.dataframe(results["importance"])
+
+                st.subheader("AI Recommendation")
+                insight = generate_insights(results)
+                st.write(insight)
+
+            except Exception as e:
+                st.error(f"Error during processing: {e}")
